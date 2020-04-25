@@ -93,8 +93,24 @@ def random_solution(G):
 
 # Calculate the cost of T.
 def calculate_cost(T):
-    visited = dict([(v, False) for v in T.nodes()])
-    res = 0
+    assert nx.is_tree(T), "Graph is not a Tree"
+    count = 0
+    totalCost = 0
+    const = 1/(2 * comb(G.order(), 2))
+    #paths = []
+    for node in list(T.nodes):
+        for nextNode in list(T.nodes):
+            if nextNode != node:
+                for path in nx.all_simple_paths(T, node, nextNode):
+                    #if set(path) not in paths:
+                    #    paths.append(set(path))
+                    count += 1
+                    cost = 0
+                    for i in range(len(path)-1):
+                        cost += T.edges[path[i], path[i+1]]["weight"]
+                    totalCost += cost
+    assert count == (T.order() * (T.order() - 1))
+    return totalCost * const
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_list):
@@ -143,12 +159,53 @@ def select_and_return_index(G, E_list):
 
 # Local search. See the paper for details. See the main code for input and output
 # format.
-def local_search(G, T, cost):
-    pass
-
+# def local_search(G, T, cost):
+#     pass
+def local_search(G, T):
+    t = T.copy()
+    currCost = calculate_cost(t)
+    treeEdges = list(t.edges)
+    allEdges = list(G.edges)
+    no_sol = True
+    
+    for u, v in treeEdges: 
+        bestEdge = (u, v)
+        edgeWeight = t.edges[u, v]['weight']
+        bestEdgeWeight = edgeWeight
+        t.remove_edge(u, v)
+        part = set(nx.dfs_tree(t, source=u).nodes())
+        
+        cut = []
+        for a, b in allEdges:
+            if ((a in part) and (b not in part)) and (a, b) != (u, v):
+                cut.append((a, b))
+            elif ((a not in part) and (b in part)) and (a, b) != (u, v):
+                cut.append((a, b))
+                
+        if len(cut) == 0:
+            t.add_edge(u, v)
+            t.edges[u, v]['weight'] = edgeWeight
+        else:
+            for x, y in cut:
+                t.add_edge(x, y)
+                t.edges[x, y]['weight'] = G.edges[x, y]['weight']
+                cost = calculate_cost(t)
+                if cost < currCost:
+                    no_sol = False
+                    currCost = cost
+                    bestEdge = (x, y)
+                    bestEdgeWeight = t.edges[x, y]['weight']
+                t.remove_edge(x, y)
+            t.add_edge(bestEdge[0], bestEdge[1])
+            t.edges[bestEdge[0], bestEdge[1]]['weight'] = bestEdgeWeight
+    
+    if no_sol:
+        return T
+    assert nx.is_tree(t) and nx.is_connected(t)
+    return t
 # search for leaf edges that can reduce cost if removed, Similar to local search.
-def leaf_search(G, T):
-    pass
+# def leaf_search(G, T):
+#     pass
 
 # main
 if  __name__ == "__main__":
