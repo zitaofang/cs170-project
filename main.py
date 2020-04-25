@@ -1,7 +1,8 @@
 import networkx as nx
 import numpy as np
 import random
-
+from argparse import ArgumentParser
+import os
 nEmployed = 50
 nOnlooker = 150
 noimp_limit_coeff = 5
@@ -206,11 +207,53 @@ def local_search(G, T):
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 # def leaf_search(G, T):
 #     pass
+def read_input_file(path, max_size=None):
+    """
+    Parses and validates an input file
+    :param path: str, a path
+    :return: networkx Graph is the input is well formed, AssertionError thrown otherwise
+    """
+    with open(path, "r") as fo:
+        n = fo.readline().strip()
+        assert n.isdigit()
+        n = int(n)
 
+        lines = fo.read().splitlines()
+        fo.close()
+
+        # validate lines
+        for line in lines:
+            tokens = line.split(" ")
+
+            assert len(tokens) == 3
+            assert tokens[0].isdigit() and int(tokens[0]) < n
+            assert tokens[1].isdigit() and int(tokens[1]) < n
+            assert bool(re.match(r"(^\d+\.\d{1,3}$|^\d+$)", tokens[2]))
+            assert 0 < float(tokens[2]) < 100
+
+        G = nx.parse_edgelist(lines, nodetype=int, data=(("weight", float),))
+        G.add_nodes_from(range(n))
+
+        assert nx.is_connected(G)
+
+        if max_size is not None:
+            assert len(G) <= max_size
+
+        return G
+
+def is_valid_file(parser, arg):
+    if not os.path.exists(arg):
+        parser.error("The file %s does not exist!" % arg)
+    else:
+        return arg
 # main
 if  __name__ == "__main__":
     # Parse the input file into a graph
-    G = None # TODO: Replace this
+    parser = ArgumentParser(description="Graph Solver")
+    parser.add_argument("-i", dest="filename", required=True, help="input file with graph", metavar="FILE", type=lambda x: is_valid_file(parser, x))
+    args = parser.parse_args()
+
+    G = read_input_file(args.filename)
     # RUn ABC
     tree, cost = ABC(G)
     # Local search
