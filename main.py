@@ -130,10 +130,7 @@ def generate_neighboring_solution(G, E, E_list):
         # Random other solution
         F = random.choice(E_list)[0]
         # Check all edges across the cut in F
-        cut = []
-        for e_F in F.edges(data=True):
-            if ((e_F[0] in part) ^ (e_F[1] in part)) and e_F != e:
-                cut.append(e_F)
+        cut = [e_F for e_F in F.edges(data=True) if ((e_F[0] in part) ^ (e_F[1] in part)) and e_F != e]
         if len(cut) == 0:
             # No solution
             res.add_edges_from([e])
@@ -168,7 +165,9 @@ def select_and_return_index(G, E_list):
     Note:
     1. We don't need to keep the original T; if it's optimal, then it won't change
     after this algorithm. You also don't need to write a branch for optimal cases
-    (like len(cut) == 0).
+    (like len(cut) == 0), though it's not the case in generate_neighboring_solution()
+    where the edge in E that I pulled out is not necessarily in the other solution
+    F. I need to keep the original e in that case.
     2. Try to maintain a consistent naming convention with other code and the
     networkX library.
     3. add_edges_from() is a better alternative than add_edge() since it accepts
@@ -178,7 +177,6 @@ def select_and_return_index(G, E_list):
 def local_search(G, T, T_cost):
     tree_edges = list(T.edges(data=True))
     all_edges = list(G.edges(data=True))
-    no_sol = True
 
     for u, v, w in tree_edges:
         # For every edge, remove the edge and add the lightest edges across the
@@ -188,11 +186,8 @@ def local_search(G, T, T_cost):
         part = set(nx.dfs_tree(T, source=u).nodes())
 
         # Find all edges in cut
-        cut = []
-        for a, b, w in all_edges:
-            # Use XOR to ensure that only one endpoint is in 'part'
-            if (a in part) ^ (b in part):
-                cut.append((a, b, w))
+        # Use XOR to ensure that only one endpoint is in 'part'
+        cut = [(a, b, w) for (a, b, w) in all_edges if (a in part) ^ (b in part)]
 
         # Look for the minimum cost edges
         for x, y, wc in cut:
@@ -207,29 +202,28 @@ def local_search(G, T, T_cost):
     assert nx.is_tree(T) and nx.is_connected(T)
     return T, T_cost
 # search for leaf edges that can reduce cost if removed, Similar to local search.
-# def leaf_search(G, T):
-#     pass
+# def leaf_search(G, T, T_cost):
 
 def valid_tree_solution(G, T):
     '''
     Check if all vertices not in T are
     neighbors to at least one vertex in T.
-    
+
     Returns a boolean.
     '''
     verticesG = set(G.nodes)
     verticesT = list(T.nodes)
     tempSet = set()
-    
+
     for vertex in verticesT:
         neighbors = list(G.neighbors(vertex))
-        
+
         for neighbor in neighbors:
             tempSet.add(neighbor)
-    
+
     if tempSet == verticesG:
         return True
-    
+
     return False
 
 def read_input_file(path, max_size=None):
@@ -284,5 +278,7 @@ if  __name__ == "__main__":
     # Local search
     tree, cost = local_search(G, tree, cost)
     # Leaves removal
-    tree, cost = leaf_search(G, tree, cost)
+    # tree, cost = leaf_search(G, tree, cost)
+    # Verify graph
+    print(valid_tree_solution(G, tree))
     # Print G into the output
