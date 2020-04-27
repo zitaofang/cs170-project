@@ -209,6 +209,29 @@ def local_search(G, T, T_cost):
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 # def leaf_search(G, T):
 #     pass
+
+def valid_tree_solution(G, T):
+    '''
+    Check if all vertices not in T are
+    neighbors to at least one vertex in T.
+    
+    Returns a boolean.
+    '''
+    verticesG = set(G.nodes)
+    verticesT = list(T.nodes)
+    tempSet = set()
+    
+    for vertex in verticesT:
+        neighbors = list(G.neighbors(vertex))
+        
+        for neighbor in neighbors:
+            tempSet.add(neighbor)
+    
+    if tempSet == verticesG:
+        return True
+    
+    return False
+
 def read_input_file(path, max_size=None):
     """
     Parses and validates an input file
