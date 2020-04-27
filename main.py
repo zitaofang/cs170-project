@@ -1,8 +1,11 @@
 import networkx as nx
 import numpy as np
 import random
+import re
 from argparse import ArgumentParser
 import os
+
+# Arguments
 nEmployed = 50
 nOnlooker = 150
 noimp_limit_coeff = 5
@@ -17,15 +20,16 @@ def abc(G):
 
     E = [random_solution(G) for i in range(nEmployed)]
     E = [(Ei, calculate_cost(Ei), 0) for Ei in E]
-    best_sol, best_cost, _ = E[np.argmax(np.array([calculate_cost(e) for e in E]))]
+    best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
-    while no_improvement < 20 * G.number_of_nodes():
+    counter = 0
+    while global_noimp < 5 * G.number_of_nodes():
         # If the best_sol is improved in this cycle, set to true
         improved = False
 
         for i in range(nEmployed):
             (current_E, cost, noimp) = E[i]
-            new_E = generate_neighboring_solution(G, current_E)
+            new_E = generate_neighboring_solution(G, current_E, E)
             if new_E is None:
                 new_E = random_solution(G)
                 E[i] = (new_E, calculate_cost(new_E), 0)
@@ -43,22 +47,23 @@ def abc(G):
 
         S = []
         for i in range(nOnlooker):
-            p = select_and_return_index(E)
-            (current_E, cost, noimp) = E[i]
-            new_S = generate_neighboring_solution(current_E)
+            p = select_and_return_index(G, E)
+            (current_E, cost, noimp) = E[p]
+            new_S = generate_neighboring_solution(G, current_E, E)
             new_cost = float('inf') if new_S is None else calculate_cost(new_S)
             if new_cost < best_cost:
                 best_sol = new_S
                 best_cost = new_cost
+                improved = True
             S.append((p, new_S, new_cost))
 
         for (p, s, cost) in S:
             if cost < E[p][1]:
                 E[p] = (s, cost, 0)
-                improved = True
 
         if not improved:
             global_noimp += 1
+        counter += 1
 
     return best_sol, best_cost
 
@@ -72,46 +77,45 @@ def random_solution(G):
         else:
             return 1 / w
 
-    current_v = choice(G.nodes())
-    vertices = set([current_v])
-    edges = dict([(e, calculate_prob(e[2]['weight'])) for e in G.edges(current_v)])
-    weight_sum = sum(edges.values())
+    vertices = set()
+    edges = list()
+    candidate_edges = dict()
+    current_v = random.choice(list(G.nodes()))
+    current_e = None
     # Start running the algorithm
+    vertices.add(current_v)
     for i in range(G.number_of_nodes() - 1):
-        e = np.random.choice(np.array([edges.keys()]), p=np.array([edges.values()]) / weight_sum)
-        current_v = e[0] if e[1] in vertices else e[1]
+        # Add new candidate edges to the set for next random selection
+        for (u, v, w) in G.edges(current_v, data=True):
+            if v not in vertices:
+                candidate_edges[(u, v)] = ((u, v, w), calculate_prob(w['weight']))
+            else:
+                # Remove back edges from candidate list
+                assert (v, u) in candidate_edges
+                candidate_edges.pop((v, u))
+        # Select a random edge to add to the tree in the next cycle (may be null at the end)
+        candidate_list, p = zip(*candidate_edges.values())
+        keys = np.empty(len(candidate_list), dtype=object)
+        keys[:] = candidate_list
+        p = np.array(p)
+        current_e = np.random.choice(keys, p=p / p.sum())
+        # Update the current vertex
+        current_v = current_e[0] if current_e[1] in vertices else current_e[1]
+        # Add the connecting vertex to the tree
         vertices.add(current_v)
-        for (u, v, w) in G.edges(current_v):
-            neighbor = u if v == current_v else v
-            if neighbor not in vertices:
-                weight_sum += w['weight']
-                edges[(u, v, w)] = calculate_prob(w['weight'])
+        # Add the current edges to the list
+        edges.append(current_e)
     # Create graph
     res = nx.Graph()
     res.add_nodes_from(vertices)
-    res.add_edges_from(edges.keys())
+    res.add_edges_from(edges)
     return res
 
 # Calculate the cost of T.
 def calculate_cost(T):
     assert nx.is_tree(T), "Graph is not a Tree"
-    count = 0
-    totalCost = 0
-    const = 1/(2 * comb(G.order(), 2))
-    #paths = []
-    for node in list(T.nodes):
-        for nextNode in list(T.nodes):
-            if nextNode != node:
-                for path in nx.all_simple_paths(T, node, nextNode):
-                    #if set(path) not in paths:
-                    #    paths.append(set(path))
-                    count += 1
-                    cost = 0
-                    for i in range(len(path)-1):
-                        cost += T.edges[path[i], path[i+1]]["weight"]
-                    totalCost += cost
-    assert count == (T.order() * (T.order() - 1))
-    return totalCost * const
+    cost_matrix = np.array([d for sublist in dict(nx.all_pairs_shortest_path_length(T)).values() for d in sublist.values()])
+    return cost_matrix.sum() / cost_matrix.shape[0]
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_list):
@@ -119,7 +123,7 @@ def generate_neighboring_solution(G, E, E_list):
     no_sol = True
     for i in range(t_k):
         # Remove random edge
-        e = random.choice(res.edges())
+        e = random.choice(list(res.edges(data=True)))
         res.remove_edge(e[0], e[1])
         # Detected partition
         part = set(nx.dfs_tree(res, source=e[0]).nodes())
@@ -127,21 +131,21 @@ def generate_neighboring_solution(G, E, E_list):
         F = random.choice(E_list)[0]
         # Check all edges across the cut in F
         cut = []
-        for e_F in F.edges():
+        for e_F in F.edges(data=True):
             if ((e_F[0] in part) ^ (e_F[1] in part)) and e_F != e:
                 cut.append(e_F)
-        if cut is None:
+        if len(cut) == 0:
             # No solution
-            res.add_edge(e)
+            res.add_edges_from([e])
         else:
             no_sol = False
             cost = []
             for e_c in cut:
-                res.add_edge(e_c)
-                cost.append(calculate_cost(e_c))
+                res.add_edges_from([e_c])
+                cost.append(calculate_cost(res))
                 res.remove_edge(e_c[0], e_c[1])
             e_sol = cut[np.argmin(np.array(cost))]
-            res.add_edge(e_sol)
+            res.add_edges_from([e_sol])
             # Got a solution, return
             break
     if no_sol:
@@ -160,50 +164,48 @@ def select_and_return_index(G, E_list):
 
 # Local search. See the paper for details. See the main code for input and output
 # format.
-# def local_search(G, T, cost):
-#     pass
-def local_search(G, T):
-    t = T.copy()
-    currCost = calculate_cost(t)
-    treeEdges = list(t.edges)
-    allEdges = list(G.edges)
+'''
+    Note:
+    1. We don't need to keep the original T; if it's optimal, then it won't change
+    after this algorithm. You also don't need to write a branch for optimal cases
+    (like len(cut) == 0).
+    2. Try to maintain a consistent naming convention with other code and the
+    networkX library.
+    3. add_edges_from() is a better alternative than add_edge() since it accepts
+    the edges format used by edges(). I remove all the weight variables to keep
+    the code conscise.
+'''
+def local_search(G, T, T_cost):
+    tree_edges = list(T.edges(data=True))
+    all_edges = list(G.edges(data=True))
     no_sol = True
-    
-    for u, v in treeEdges: 
-        bestEdge = (u, v)
-        edgeWeight = t.edges[u, v]['weight']
-        bestEdgeWeight = edgeWeight
-        t.remove_edge(u, v)
-        part = set(nx.dfs_tree(t, source=u).nodes())
-        
+
+    for u, v, w in tree_edges:
+        # For every edge, remove the edge and add the lightest edges across the
+        # resulting cut.
+        best_edge = (u, v, w)
+        T.remove_edge(u, v)
+        part = set(nx.dfs_tree(T, source=u).nodes())
+
+        # Find all edges in cut
         cut = []
-        for a, b in allEdges:
-            if ((a in part) and (b not in part)) and (a, b) != (u, v):
-                cut.append((a, b))
-            elif ((a not in part) and (b in part)) and (a, b) != (u, v):
-                cut.append((a, b))
-                
-        if len(cut) == 0:
-            t.add_edge(u, v)
-            t.edges[u, v]['weight'] = edgeWeight
-        else:
-            for x, y in cut:
-                t.add_edge(x, y)
-                t.edges[x, y]['weight'] = G.edges[x, y]['weight']
-                cost = calculate_cost(t)
-                if cost < currCost:
-                    no_sol = False
-                    currCost = cost
-                    bestEdge = (x, y)
-                    bestEdgeWeight = t.edges[x, y]['weight']
-                t.remove_edge(x, y)
-            t.add_edge(bestEdge[0], bestEdge[1])
-            t.edges[bestEdge[0], bestEdge[1]]['weight'] = bestEdgeWeight
-    
-    if no_sol:
-        return T
-    assert nx.is_tree(t) and nx.is_connected(t)
-    return t
+        for a, b, w in all_edges:
+            # Use XOR to ensure that only one endpoint is in 'part'
+            if (a in part) ^ (b in part):
+                cut.append((a, b, w))
+
+        # Look for the minimum cost edges
+        for x, y, wc in cut:
+            T.add_edges_from([(x, y, wc)])
+            cost = calculate_cost(T)
+            if cost < T_cost:
+                T_cost = cost
+                best_edge = (x, y, wc)
+            T.remove_edge(x, y)
+        T.add_edges_from([best_edge])
+
+    assert nx.is_tree(T) and nx.is_connected(T)
+    return T, T_cost
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 # def leaf_search(G, T):
 #     pass
@@ -255,7 +257,7 @@ if  __name__ == "__main__":
 
     G = read_input_file(args.filename)
     # RUn ABC
-    tree, cost = ABC(G)
+    tree, cost = abc(G)
     # Local search
     tree, cost = local_search(G, tree, cost)
     # Leaves removal
