@@ -265,6 +265,13 @@ def is_valid_file(parser, arg):
         parser.error("The file %s does not exist!" % arg)
     else:
         return arg
+
+def write_output_file(T, path):
+    with open(path, "w") as fo:
+        fo.write(" ".join(map(str, T.nodes)) + "\n")
+        lines = nx.generate_edgelist(T, data=False)
+        fo.writelines("\n".join(lines))
+        fo.close()
 # main
 if  __name__ == "__main__":
     # Parse the input file into a graph
@@ -282,3 +289,4 @@ if  __name__ == "__main__":
     # Verify graph
     print(valid_tree_solution(G, tree))
     # Print G into the output
+    write_output_file(tree, args.filename.replace(".in", ".out"))
