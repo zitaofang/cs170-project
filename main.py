@@ -26,12 +26,9 @@ def abc(G):
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
 
-    while global_noimp < 5 * n:
+    while global_noimp < n:
         # If the best_sol is improved in this cycle, set to true
         improved = False
-        # Print stat
-        if global_noimp % n == 0:
-            print("Got to " + str(global_noimp / n))
 
         for i in range(nEmployed):
             (current_E, cost, noimp) = E[i]
@@ -69,6 +66,10 @@ def abc(G):
 
         if not improved:
             global_noimp += 1
+        else:
+            # Print stat
+            print("Reset from" + str(global_noimp / n))
+            global_noimp = 0
 
     return best_sol, best_cost
 
