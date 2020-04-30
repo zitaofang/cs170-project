@@ -383,6 +383,9 @@ if  __name__ == "__main__":
     print("Leaf search done")
     assert valid_tree_solution(G, tree)
     # Test cost
+    reference_cost = average_shortest_path_length(tree, weight='weight')
+    print(reference_cost)
     print(cost)
+    assert reference_cost == cost
     # Print G into the output
     write_output_file(tree, args.filename.replace(".in", ".out"))
