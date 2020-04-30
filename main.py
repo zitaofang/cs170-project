@@ -3,6 +3,7 @@ import numpy as np
 import random
 import re
 from argparse import ArgumentParser
+from collections import deque
 import os
 
 # Arguments
@@ -114,8 +115,7 @@ def random_solution(G):
 # Calculate the cost of T.
 def calculate_cost(T):
     assert nx.is_tree(T), "Graph is not a Tree"
-    cost_matrix = np.array([d for sublist in dict(nx.all_pairs_shortest_path_length(T)).values() for d in sublist.values()])
-    return cost_matrix.sum() / cost_matrix.shape[0]
+    return nx.average_shortest_path_length(T, weight='weight')
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_list):
@@ -177,6 +177,8 @@ def select_and_return_index(G, E_list):
 def local_search(G, T, T_cost):
     tree_edges = list(T.edges(data=True))
     all_edges = list(G.edges(data=True))
+    # Introduce randomness to avoid being stuck at local optimal
+    random.shuffle(tree_edges)
 
     for u, v, w in tree_edges:
         # For every edge, remove the edge and add the lightest edges across the
@@ -204,45 +206,53 @@ def local_search(G, T, T_cost):
 
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 def leaf_search(G, T, T_cost):
-    cost = T_cost
     leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
-    
-    for leaf_node in leaf_nodes:
-        u, v = list(T.edges(leaf_node))[0]
-        weight = T.edges[u, v]['weight']
+    # Introduce randomness to avoid being stuck at local optimal
+    random.shuffle(leaf_nodes)
+    leaf_nodes = deque(leaf_nodes)
+    tree_nodes = set(T.nodes)
+
+    while leaf_nodes:
+        leaf_node = leaf_nodes.pop()
+        u, v, w = list(T.edges(leaf_node, data=True))[0]
         T.remove_node(leaf_node)
+        tree_nodes.remove(leaf_node)
         neighbors = list(G.neighbors(leaf_node))
-        tree_nodes = set(T.nodes)
-        
-        canContinue = True
-        for neighbor in neighbors: 
-            adjacent_vertices = set(G.neighbors(neighbor))
+
+        # Check if removing this leaf will make any vertex no longer adjacent to
+        # the tree
+        vertex_disconnected = False
+        for neighbor in neighbors:
+            if neighbor in tree_nodes:
+                continue
+            adjacent_vertices = list(G.neighbors(neighbor))
+            vertex_disconnected = True
             for adjacent_vertex in adjacent_vertices:
-                if (adjacent_vertex in tree_nodes) or (neighbor in tree_nodes):
-                    continue
-                else:
-                    canContinue = False
+                if adjacent_vertex in tree_nodes:
+                    vertex_disconnected = False
                     break
-            if canContinue == False:
+            if vertex_disconnected:
                 break
-                
-        if canContinue == False:
+        if vertex_disconnected:
             T.add_node(leaf_node)
-            T.add_edge(u, v)
-            T.edges[u, v]['weight'] = weight
-            continue 
+            tree_nodes.add(leaf_node)
+            T.add_edges_from([(u, v, w)])
+            continue
+
+        # Check cost
+        new_cost = calculate_cost(T)
+        if new_cost > T_cost:
+            T.add_node(leaf_node)
+            tree_nodes.add(leaf_node)
+            T.add_edges_from([(u, v, w)])
         else:
-            new_cost = calculate_cost(T)
-            if new_cost > cost:
-                T.add_node(leaf_node)
-                T.add_edge(u, v)
-                T.edges[u, v]['weight'] = weight
-            else:
-                leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
-    
-    assert nx.is_tree(T) and nx.is_connected(T) and valid_tree_solution(G, T)        
-    
-    return T
+            T_cost = new_cost
+            if T.degree(v) == 1:
+                leaf_nodes.append(v)
+
+    assert nx.is_tree(T) and nx.is_connected(T) and valid_tree_solution(G, T)
+
+    return T, T_cost
 
 def valid_tree_solution(G, T):
     '''
@@ -320,13 +330,16 @@ if  __name__ == "__main__":
     args = parser.parse_args()
 
     G = read_input_file(args.filename)
-    # RUn ABC
+    # Run ABC
     tree, cost = abc(G)
+    print("ABC done")
     # Local search
     tree, cost = local_search(G, tree, cost)
+    print("Local search done")
     # Leaves removal
-    # tree, cost = leaf_search(G, tree, cost)
-    # Verify graph
-    print(valid_tree_solution(G, tree))
+    tree, cost = leaf_search(G, tree, cost)
+    print("Leaf search done")
+    # Test cost
+    print(cost)
     # Print G into the output
     write_output_file(tree, args.filename.replace(".in", ".out"))
