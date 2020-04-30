@@ -4,6 +4,7 @@ import random
 import re
 from argparse import ArgumentParser
 from collections import deque
+import math
 import os
 
 # Arguments
@@ -113,7 +114,33 @@ def random_solution(G):
 
 # Calculate the cost of T.
 def calculate_cost(T):
-    return nx.average_shortest_path_length(T, weight='weight')
+    T = nx.relabel.convert_node_labels_to_integers(T)
+    n_total = T.number_of_nodes()
+    subtree_node_list = np.ones(n_total)
+    sum = 0
+    # Nodes to be explored
+    node_queue = deque([x for x in T.nodes if T.degree(x) == 1])
+
+    # Calculate sum of all pairwise distance
+    while node_queue:
+        current_node = node_queue.pop()
+        n_subtree_node = subtree_node_list[current_node]
+        current_edges = list(T.edges(current_node, data=True))
+        # If there is no more edge, we have finished the graph, return
+        if not current_edges:
+            break
+        # Extract weight and update cost
+        _, v, weight = current_edges[0]
+        weight = weight['weight']
+        sum += weight * (n_total - n_subtree_node) * n_subtree_node
+        # Update tree
+        T.remove_node(current_node)
+        subtree_node_list[v] += subtree_node_list[current_node]
+        # Put v to the vertices to explore if it becomes a leaf
+        if T.degree(v) == 1:
+            node_queue.append(v)
+    # Divide it by the number of pairs and retrun
+    return sum / (n_total * (n_total - 1) / 2)
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_list):
