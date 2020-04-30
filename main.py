@@ -67,8 +67,6 @@ def abc(G):
         if not improved:
             global_noimp += 1
         else:
-            # Print stat
-            print("Reset from" + str(global_noimp / n))
             global_noimp = 0
 
     return best_sol, best_cost
@@ -377,19 +375,20 @@ if  __name__ == "__main__":
     args = parser.parse_args()
 
     G = read_input_file(args.filename)
-    # Run ABC
-    tree, cost = abc(G)
-    print("ABC done")
-    assert valid_tree_solution(G, tree)
-    # Local search
-    tree, cost = local_search(G, tree, cost)
-    print("Local search done")
-    assert valid_tree_solution(G, tree)
-    # Leaves removal
-    tree, cost = leaf_search(G, tree, cost)
-    print("Leaf search done")
-    assert valid_tree_solution(G, tree)
-    # Test cost
-    print(cost)
+    min_tree, min_cost = None, float("inf")
+    for i in range(5):
+        # Run ABC
+        tree, cost = abc(G)
+        assert valid_tree_solution(G, tree)
+        # Local search
+        tree, cost = local_search(G, tree, cost)
+        assert valid_tree_solution(G, tree)
+        # Leaves removal
+        tree, cost = leaf_search(G, tree, cost)
+        assert valid_tree_solution(G, tree)
+        # Test cost
+        if cost < min_cost:
+            min_tree = tree
+            min_cost = cost
     # Print G into the output
-    write_output_file(tree, args.filename.replace(".in", ".out"))
+    write_output_file(min_tree, args.filename.replace(".in", ".out"))
