@@ -18,32 +18,36 @@ t_k = 5
 # ABC algorithm core
 def abc(G):
     # Setting
-    noimp_limit = noimp_limit_coeff * G.number_of_nodes()
+    n = G.number_of_nodes()
+    noimp_limit = noimp_limit_coeff * n
 
     E = [random_solution(G) for i in range(nEmployed)]
-    E = [(Ei, calculate_cost(Ei), 0) for Ei in E]
+    E = [(Ei, calculate_cost(Ei, n), 0) for Ei in E]
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
-    counter = 0
-    while global_noimp < 5 * G.number_of_nodes():
+
+    while global_noimp < 5 * n:
         # If the best_sol is improved in this cycle, set to true
         improved = False
+        # Print stat
+        if global_noimp % n == 0:
+            print("Got to " + str(global_noimp / n))
 
         for i in range(nEmployed):
             (current_E, cost, noimp) = E[i]
             new_E = generate_neighboring_solution(G, current_E, E)
             if new_E is None:
                 new_E = random_solution(G)
-                E[i] = (new_E, calculate_cost(new_E), 0)
+                E[i] = (new_E, calculate_cost(new_E, n), 0)
             else:
-                new_cost = calculate_cost(new_E)
+                new_cost = calculate_cost(new_E, n)
                 if new_cost < cost:
                     E[i] = (new_E, new_cost, 0)
                 else:
                     noimp += 1
                     if noimp >= noimp_limit:
                         new_E = random_solution(G)
-                        E[i] = (new_E, calculate_cost(new_E), 0)
+                        E[i] = (new_E, calculate_cost(new_E, n), 0)
                     else:
                         E[i] = (current_E, cost, noimp)
 
@@ -52,7 +56,7 @@ def abc(G):
             p = select_and_return_index(G, E)
             (current_E, cost, noimp) = E[p]
             new_S = generate_neighboring_solution(G, current_E, E)
-            new_cost = float('inf') if new_S is None else calculate_cost(new_S)
+            new_cost = float('inf') if new_S is None else calculate_cost(new_S, n)
             if new_cost < best_cost:
                 best_sol = new_S
                 best_cost = new_cost
@@ -65,7 +69,6 @@ def abc(G):
 
         if not improved:
             global_noimp += 1
-        counter += 1
 
     return best_sol, best_cost
 
@@ -113,10 +116,10 @@ def random_solution(G):
     return res
 
 # Calculate the cost of T.
-def calculate_cost(T):
-    T = nx.relabel.convert_node_labels_to_integers(T)
+def calculate_cost(T, n_G):
+    T = T.copy()
     n_total = T.number_of_nodes()
-    subtree_node_list = np.ones(n_total)
+    subtree_node_list = np.ones(n_G)
     sum = 0
     # Nodes to be explored
     node_queue = deque([x for x in T.nodes if T.degree(x) == 1])
@@ -144,6 +147,7 @@ def calculate_cost(T):
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_list):
+    n = G.number_of_nodes()
     res = E.copy()
     no_sol = True
     for i in range(t_k):
@@ -164,7 +168,7 @@ def generate_neighboring_solution(G, E, E_list):
             cost = []
             for e_c in cut:
                 res.add_edges_from([e_c])
-                cost.append(calculate_cost(res))
+                cost.append(calculate_cost(res, n))
                 res.remove_edge(e_c[0], e_c[1])
             e_sol = cut[np.argmin(np.array(cost))]
             res.add_edges_from([e_sol])
@@ -200,6 +204,7 @@ def select_and_return_index(G, E_list):
     the code conscise.
 '''
 def local_search(G, T, T_cost):
+    n = G.number_of_nodes()
     tree_edges = list(T.edges(data=True))
     all_edges = list(G.edges(data=True))
     # Introduce randomness to avoid being stuck at local optimal
@@ -222,7 +227,7 @@ def local_search(G, T, T_cost):
             # Look for the minimum cost edges
             for x, y, wc in cut:
                 T.add_edges_from([(x, y, wc)])
-                cost = calculate_cost(T)
+                cost = calculate_cost(T, n)
                 if cost < T_cost:
                     T_cost = cost
                     best_edge = (x, y, wc)
@@ -234,6 +239,7 @@ def local_search(G, T, T_cost):
 
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 def leaf_search(G, T, T_cost):
+    n = G.number_of_nodes()
     leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
     # Introduce randomness to avoid being stuck at local optimal
     random.shuffle(leaf_nodes)
@@ -276,7 +282,7 @@ def leaf_search(G, T, T_cost):
                 continue
 
             # Check cost
-            new_cost = calculate_cost(T)
+            new_cost = calculate_cost(T, n)
             if new_cost > T_cost:
                 T.add_node(leaf_node)
                 tree_nodes.add(leaf_node)
@@ -383,9 +389,6 @@ if  __name__ == "__main__":
     print("Leaf search done")
     assert valid_tree_solution(G, tree)
     # Test cost
-    reference_cost = average_shortest_path_length(tree, weight='weight')
-    print(reference_cost)
     print(cost)
-    assert reference_cost == cost
     # Print G into the output
     write_output_file(tree, args.filename.replace(".in", ".out"))
