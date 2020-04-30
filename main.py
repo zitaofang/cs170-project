@@ -201,8 +201,48 @@ def local_search(G, T, T_cost):
 
     assert nx.is_tree(T) and nx.is_connected(T)
     return T, T_cost
+
 # search for leaf edges that can reduce cost if removed, Similar to local search.
-# def leaf_search(G, T, T_cost):
+def leaf_search(G, T, T_cost):
+    cost = T_cost
+    leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
+    
+    for leaf_node in leaf_nodes:
+        u, v = list(T.edges(leaf_node))[0]
+        weight = T.edges[u, v]['weight']
+        T.remove_node(leaf_node)
+        neighbors = list(G.neighbors(leaf_node))
+        tree_nodes = set(T.nodes)
+        
+        canContinue = True
+        for neighbor in neighbors: 
+            adjacent_vertices = set(G.neighbors(neighbor))
+            for adjacent_vertex in adjacent_vertices:
+                if (adjacent_vertex in tree_nodes) or (neighbor in tree_nodes):
+                    continue
+                else:
+                    canContinue = False
+                    break
+            if canContinue == False:
+                break
+                
+        if canContinue == False:
+            T.add_node(leaf_node)
+            T.add_edge(u, v)
+            T.edges[u, v]['weight'] = weight
+            continue 
+        else:
+            new_cost = calculate_cost(T)
+            if new_cost > cost:
+                T.add_node(leaf_node)
+                T.add_edge(u, v)
+                T.edges[u, v]['weight'] = weight
+            else:
+                leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
+    
+    assert nx.is_tree(T) and nx.is_connected(T) and valid_tree_solution(G, T)        
+    
+    return T
 
 def valid_tree_solution(G, T):
     '''
