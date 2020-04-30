@@ -92,7 +92,6 @@ def random_solution(G):
                 candidate_edges[(u, v)] = ((u, v, w), calculate_prob(w['weight']))
             else:
                 # Remove back edges from candidate list
-                assert (v, u) in candidate_edges
                 candidate_edges.pop((v, u))
         # Select a random edge to add to the tree in the next cycle (may be null at the end)
         candidate_list, p = zip(*candidate_edges.values())
