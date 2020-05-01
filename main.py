@@ -9,7 +9,6 @@ import os
 import threading
 import queue
 
-
 # Arguments
 nEmployed = 50
 nOnlooker = 150
@@ -17,7 +16,10 @@ noimp_limit_coeff = 5
 p_sq = 0.25
 p_better = 0.95
 t_k = 5
-q = queue.Queue()
+
+# Multithread queue
+file_queue = queue.Queue()
+
 # ABC algorithm core
 def abc(G):
     # Setting
@@ -373,7 +375,11 @@ def write_output_file(T, path):
 
 def run_on_all_files():
     while True:
-        item = q.get()
+        # Get a file from the list
+        try:
+            item = file_queue.get(block=False)
+        except queue.Empty:
+            return
         G = read_input_file(item)
         min_tree, min_cost = None, float("inf")
         for i in range(5):
@@ -393,17 +399,21 @@ def run_on_all_files():
         # Print G into the output
         print(item)
         write_output_file(min_tree, item.replace(".in", ".out"))
-        q.task_done()
+        file_queue.task_done()
 
 # main
 if  __name__ == "__main__":
     # Parse the input file into a graph
     parser = ArgumentParser(description="Graph Solver")
-    parser.add_argument("-path", dest="path", required=True, help="input folder with graphs", type=lambda x: is_valid_path(x))
+    parser.add_argument("--path", dest="path", required=True, help="input folder with graphs", type=lambda x: is_valid_path(x))
     args = parser.parse_args()
-    threading.Thread(target=run_on_all_files, daemon=True).start()
+    # Put all *.in file into the queue
+    regex = re.compile('.*\.in')
     for file in os.listdir(args.path):
-        q.put(os.path.join(args.path, file))
-    q.join()
+        if regex.match(file):
+            file_queue.put(os.path.join(args.path, file))
+    # Run threads
+    for i in range(8):
+        threading.Thread(target=run_on_all_files, daemon=True).start()
+    file_queue.join()
     print("all files processed")
-    
