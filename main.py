@@ -6,6 +6,9 @@ from argparse import ArgumentParser
 from collections import deque
 import math
 import os
+import threading
+import queue
+
 
 # Arguments
 nEmployed = 50
@@ -14,7 +17,7 @@ noimp_limit_coeff = 5
 p_sq = 0.25
 p_better = 0.95
 t_k = 5
-
+q = queue.Queue()
 # ABC algorithm core
 def abc(G):
     # Setting
@@ -355,11 +358,11 @@ def read_input_file(path, max_size=None):
 
         return G
 
-def is_valid_file(parser, arg):
-    if not os.path.exists(arg):
-        parser.error("The file %s does not exist!" % arg)
+def is_valid_path(string):
+    if os.path.isdir(string):
+        return string
     else:
-        return arg
+        parser.error("The file %s does not exist!" % string)
 
 def write_output_file(T, path):
     with open(path, "w") as fo:
@@ -367,28 +370,40 @@ def write_output_file(T, path):
         lines = nx.generate_edgelist(T, data=False)
         fo.writelines("\n".join(lines))
         fo.close()
+
+def run_on_all_files():
+    while True:
+        item = q.get()
+        G = read_input_file(item)
+        min_tree, min_cost = None, float("inf")
+        for i in range(5):
+            # Run ABC
+            tree, cost = abc(G)
+            assert valid_tree_solution(G, tree)
+            # Local search
+            tree, cost = local_search(G, tree, cost)
+            assert valid_tree_solution(G, tree)
+            # Leaves removal
+            tree, cost = leaf_search(G, tree, cost)
+            assert valid_tree_solution(G, tree)
+            # Test cost
+            if cost < min_cost:
+                min_tree = tree
+                min_cost = cost
+        # Print G into the output
+        print(item)
+        write_output_file(min_tree, item.replace(".in", ".out"))
+        q.task_done()
+
 # main
 if  __name__ == "__main__":
     # Parse the input file into a graph
     parser = ArgumentParser(description="Graph Solver")
-    parser.add_argument("-i", dest="filename", required=True, help="input file with graph", metavar="FILE", type=lambda x: is_valid_file(parser, x))
+    parser.add_argument("-path", dest="path", required=True, help="input folder with graphs", type=lambda x: is_valid_path(x))
     args = parser.parse_args()
-
-    G = read_input_file(args.filename)
-    min_tree, min_cost = None, float("inf")
-    for i in range(5):
-        # Run ABC
-        tree, cost = abc(G)
-        assert valid_tree_solution(G, tree)
-        # Local search
-        tree, cost = local_search(G, tree, cost)
-        assert valid_tree_solution(G, tree)
-        # Leaves removal
-        tree, cost = leaf_search(G, tree, cost)
-        assert valid_tree_solution(G, tree)
-        # Test cost
-        if cost < min_cost:
-            min_tree = tree
-            min_cost = cost
-    # Print G into the output
-    write_output_file(min_tree, args.filename.replace(".in", ".out"))
+    threading.Thread(target=run_on_all_files, daemon=True).start()
+    for file in os.listdir(args.path):
+        q.put(os.path.join(args.path, file))
+    q.join()
+    print("all files processed")
+    
