@@ -8,11 +8,13 @@ import math
 import os
 import threading
 import queue
+import datetime
 
 # Arguments
 nEmployed = 50
 nOnlooker = 150
 noimp_limit_coeff = 5
+global_noimp_limit_coeff = 0.25
 p_sq = 0.25
 p_better = 0.95
 t_k = 5
@@ -31,7 +33,7 @@ def abc(G):
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
 
-    while global_noimp < n:
+    while global_noimp < global_noimp_limit_coeff * n:
         # If the best_sol is improved in this cycle, set to true
         improved = False
 
@@ -397,7 +399,6 @@ def run_on_all_files():
                 min_tree = tree
                 min_cost = cost
         # Print G into the output
-        print(item)
         write_output_file(min_tree, item.replace(".in", ".out"))
         file_queue.task_done()
 
@@ -405,8 +406,11 @@ def run_on_all_files():
 if  __name__ == "__main__":
     # Parse the input file into a graph
     parser = ArgumentParser(description="Graph Solver")
-    parser.add_argument("--path", dest="path", required=True, help="input folder with graphs", type=lambda x: is_valid_path(x))
+    parser.add_argument("-p", dest="path", required=True, help="input folder with graphs", type=lambda x: is_valid_path(x))
     args = parser.parse_args()
+    # Print timestamp
+    start_time = datetime.datetime.now()
+    print("Start at: " + str(start_time))
     # Put all *.in file into the queue
     regex = re.compile('.*\.in')
     for file in os.listdir(args.path):
@@ -416,4 +420,8 @@ if  __name__ == "__main__":
     for i in range(8):
         threading.Thread(target=run_on_all_files, daemon=True).start()
     file_queue.join()
+    # Success: print current time
     print("all files processed")
+    end_time = datetime.datetime.now()
+    print("End at: " + str(end_time))
+    print("Total time: " + str(end_time - start_time))
