@@ -21,6 +21,9 @@ t_k = 5
 
 # Multithread queue
 file_queue = queue.Queue()
+# Log file
+log_file = None
+log_lock = threading.Lock()
 
 # ABC algorithm core
 def abc(G):
@@ -33,7 +36,7 @@ def abc(G):
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
 
-    while global_noimp < global_noimp_limit_coeff * n:
+    while global_noimp < max(25, global_noimp_limit_coeff * n):
         # If the best_sol is improved in this cycle, set to true
         improved = False
 
@@ -373,7 +376,6 @@ def write_output_file(T, path):
         fo.write(" ".join(map(str, T.nodes)) + "\n")
         lines = nx.generate_edgelist(T, data=False)
         fo.writelines("\n".join(lines))
-        fo.close()
 
 def run_on_all_files():
     while True:
@@ -382,24 +384,33 @@ def run_on_all_files():
             item = file_queue.get(block=False)
         except queue.Empty:
             return
-        G = read_input_file(item)
-        min_tree, min_cost = None, float("inf")
-        for i in range(5):
-            # Run ABC
-            tree, cost = abc(G)
-            assert valid_tree_solution(G, tree)
-            # Local search
-            tree, cost = local_search(G, tree, cost)
-            assert valid_tree_solution(G, tree)
-            # Leaves removal
-            tree, cost = leaf_search(G, tree, cost)
-            assert valid_tree_solution(G, tree)
-            # Test cost
-            if cost < min_cost:
-                min_tree = tree
-                min_cost = cost
-        # Print G into the output
-        write_output_file(min_tree, item.replace(".in", ".out"))
+        # Fault protection: continue to the next file on exception and dump error
+        # to a file
+        try:
+            G = read_input_file(item)
+            min_tree, min_cost = None, float("inf")
+            for i in range(5):
+                # Run ABC
+                tree, cost = abc(G)
+                assert valid_tree_solution(G, tree)
+                # Local search
+                tree, cost = local_search(G, tree, cost)
+                assert valid_tree_solution(G, tree)
+                # Leaves removal
+                tree, cost = leaf_search(G, tree, cost)
+                assert valid_tree_solution(G, tree)
+                # Test cost
+                if cost < min_cost:
+                    min_tree = tree
+                    min_cost = cost
+            # Print G into the output
+            write_output_file(min_tree, item.replace(".in", ".out"))
+        except Exception as e:
+            # print debug message
+            log_lock.acquire()
+            log_file.write('Error when processing ' + item + '\n\n')
+            log_file.write(str(e) + '\n')
+            log_lock.release()
         file_queue.task_done()
 
 # main
@@ -411,16 +422,21 @@ if  __name__ == "__main__":
     # Print timestamp
     start_time = datetime.datetime.now()
     print("Start at: " + str(start_time))
+    # Open log file
+    log_file = open('main.log', "w")
     # Put all *.in file into the queue
     regex = re.compile('.*\.in')
     for file in os.listdir(args.path):
         if regex.match(file):
-            file_queue.put(os.path.join(args.path, file))
+            # If *.out already exists, skip
+            if not os.path.isfile(file.replace(".in", ".out")):
+                file_queue.put(os.path.join(args.path, file))
     # Run threads
     for i in range(8):
         threading.Thread(target=run_on_all_files, daemon=True).start()
     file_queue.join()
     # Success: print current time
+    log_file.close()
     print("all files processed")
     end_time = datetime.datetime.now()
     print("End at: " + str(end_time))
