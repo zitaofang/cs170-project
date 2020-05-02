@@ -432,7 +432,7 @@ if  __name__ == "__main__":
     for file in os.listdir(args.path):
         if regex.match(file):
             # If *.out already exists, skip
-            if not os.path.isfile(file.replace(".in", ".out")):
+            if not os.path.isfile(os.path.join(args.path, file).replace(".in", ".out")):
                 file_queue.put(os.path.join(args.path, file))
 
     # Run threads
