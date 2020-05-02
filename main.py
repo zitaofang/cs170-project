@@ -247,6 +247,8 @@ def random_solution(G):
 # Calculate the cost of T.
 def calculate_cost(T, n_G):
     n = T.number_of_nodes()
+    if n == 1:
+        return 0
     subtree_node_list = np.ones(n_G)
     sum = 0
     # Nodes to be explored
@@ -537,24 +539,34 @@ def run_on_all_files(num):
             G = read_input_file(item)
             G = remove_self_loops(G)
             min_tree, min_cost = None, float("inf")
-            for i in range(5):
-                # Run ABC
-                tree, cost = abc(G)
-                assert valid_tree_solution(G, tree)
-                # Local search
-                tree, cost = local_search(G, tree, cost)
-                assert valid_tree_solution(G, tree)
-                # Leaves removal
-                tree, cost = leaf_search(G, tree, cost)
-                assert valid_tree_solution(G, tree)
-                # Test cost
-                if cost < min_cost:
-                    min_tree = tree
-                    min_cost = cost
-                print('Thread ' + str(num) + ' finished cycle ' + str(i) + '!')
+            # Check edge case
+            nodes = list(G.nodes())
+            degrees = np.array([G.degree(v) for v in nodes])
+            max_d = np.argmax(degrees)
+            if degrees[max_d] == G.number_of_nodes() - 1:
+                min_tree = nx.Graph()
+                min_tree.add_node(nodes[max_d])
+                min_cost = 0
+                print("Thread " + str(num) + ' found trivial solution!')
+            else:
+                for i in range(5):
+                    # Run ABC
+                    tree, cost = abc(G)
+                    assert valid_tree_solution(G, tree)
+                    # Local search
+                    tree, cost = local_search(G, tree, cost)
+                    assert valid_tree_solution(G, tree)
+                    # Leaves removal
+                    tree, cost = leaf_search(G, tree, cost)
+                    assert valid_tree_solution(G, tree)
+                    # Test cost
+                    if cost < min_cost:
+                        min_tree = tree
+                        min_cost = cost
+                    print('Thread ' + str(num) + ' finished cycle ' + str(i) + '!')
+                min_tree = min_tree.to_nx()
             # Print G into the output
-            print("Minimum cost: " + str(cost))
-            min_tree = min_tree.to_nx()
+            print("Minimum cost: " + str(min_cost))
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
             # print debug message
@@ -584,6 +596,7 @@ if  __name__ == "__main__":
     # Run threads
     for i in range(8):
         threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
+    # run_on_all_files(0)
     file_queue.join()
     # Success: print current time
     log_file.close()
