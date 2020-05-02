@@ -377,15 +377,17 @@ def write_output_file(T, path):
         lines = nx.generate_edgelist(T, data=False)
         fo.writelines("\n".join(lines))
 
-def run_on_all_files():
+def run_on_all_files(num):
     while True:
         # Get a file from the list
         try:
             item = file_queue.get(block=False)
         except queue.Empty:
+            print('Thread ' + str(num) + ' exits!')
             return
         # Fault protection: continue to the next file on exception and dump error
         # to a file
+        print('Thread ' + str(num) + ' now at ' + item + '!')
         try:
             G = read_input_file(item)
             min_tree, min_cost = None, float("inf")
@@ -403,14 +405,15 @@ def run_on_all_files():
                 if cost < min_cost:
                     min_tree = tree
                     min_cost = cost
+                print('Thread ' + str(num) + ' finished cycle ' + str(i) + '!')
             # Print G into the output
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
             # print debug message
             log_lock.acquire()
-            log_file.write('Error when processing ' + item + '\n\n')
             log_file.write(str(e) + '\n')
             log_lock.release()
+            print('Thread ' + str(num) + ' triggered an exception at ' + item + '!')
         file_queue.task_done()
 
 # main
@@ -421,7 +424,6 @@ if  __name__ == "__main__":
     args = parser.parse_args()
     # Print timestamp
     start_time = datetime.datetime.now()
-    print("Start at: " + str(start_time))
     # Open log file
     log_file = open('main.log', "w")
     # Put all *.in file into the queue
@@ -439,5 +441,6 @@ if  __name__ == "__main__":
     log_file.close()
     print("all files processed")
     end_time = datetime.datetime.now()
+    print("Start at: " + str(start_time))
     print("End at: " + str(end_time))
     print("Total time: " + str(end_time - start_time))
