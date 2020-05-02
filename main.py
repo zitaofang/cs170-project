@@ -25,6 +25,131 @@ file_queue = queue.Queue()
 log_file = None
 log_lock = threading.Lock()
 
+# Solution tree class for fast computation
+class Solution:
+    def __init__(self, n, vertices, edges):
+        self.n = n
+        self.m = len(edges)
+        self.next_i = self.m
+        self.nodes = vertices
+        self.neighbors = [[] for _ in range(n)]
+        self.edges = dict()
+        self.edges_reverse = dict()
+        for i, (u, v, w) in enumerate(edges):
+            assert (u, v) not in self.edges_reverse and (v, u) not in self.edges_reverse
+            self.neighbors[u].append((v, w['weight']))
+            self.neighbors[v].append((u, w['weight']))
+            self.edges[i] = (u, v, w['weight'])
+            self.edges_reverse[u, v] = i
+        self.pop_u = None
+        self.pop_v = None
+        self.disabled_edge = None
+        self.disabled_node = False
+
+    def copy(self):
+        res = Solution(self.n, [], [])
+        res.m = self.m
+        res.next_i = self.next_i
+        res.nodes = self.nodes.copy()
+        res.neighbors = [l.copy() for l in self.neighbors]
+        res.edges = self.edges.copy()
+        res.edges_reverse = self.edges_reverse.copy()
+        return res
+
+    def degree_list(self):
+        res = [len(l) for l in self.neighbors]
+        if self.disabled_edge is not None:
+            res[self.disabled_edge[0]] -= 1
+            res[self.disabled_edge[1]] -= 1
+        return res
+
+    def connected_component(self, v):
+        # Since this is only called on one of the endpoints of disabled_edge...
+        visited = np.zeros(self.n, dtype=bool)
+        res = set()
+        def explore(u):
+            visited[u] = True
+            res.add(u)
+            for next, _ in self.neighbors[u]:
+                if not visited[next] and not (u == self.disabled_edge[0] and next == self.disabled_edge[1]):
+                    explore(next)
+        for u, _ in self.neighbors[v]:
+            if not (v == self.disabled_edge[0] and u == self.disabled_edge[1]):
+                explore(u)
+        return res
+
+    def number_of_nodes(self):
+        res = len(self.nodes)
+        if self.disabled_node:
+            res -= 1
+        return res
+
+    def disable_node(self):
+        assert not self.disabled_node
+        self.disabled_node = True
+
+    def reenable_node(self):
+        assert self.disabled_node
+        self.disabled_node = False
+
+    def remove_node(self, v):
+        assert not self.neighbors[v]
+        if self.disabled_node:
+            self.reenable_node()
+        self.nodes.remove(v)
+
+    def disable_edge(self, u, v):
+        self.disabled_edge = (u, v)
+
+    def disabled(self, u, v):
+        return ((u, v) == self.disabled_edge or (v, u) == self.disabled_edge)
+
+    def reenable_edge(self):
+        self.disabled_edge = None
+
+    def remove_edge(self, u, v):
+        if (u, v) == self.disabled_edge:
+            self.disabled_edge = None
+        self.m -= 1
+        if (v, u) in self.edges_reverse:
+            v, u = u, v
+        i = self.edges_reverse[u, v]
+        del self.edges_reverse[u, v]
+        del self.edges[i]
+        self.neighbors[u] = [a for a in self.neighbors[u] if a[0] != v]
+        self.neighbors[v] = [a for a in self.neighbors[v] if a[0] != u]
+
+    def add_edge(self, e):
+        u, v, w = e
+        assert (u, v) not in self.edges_reverse and (v, u) not in self.edges_reverse
+        i = self.next_i
+        self.next_i += 1
+        self.edges_reverse[u, v] = i
+        self.edges[i] = (u, v, w)
+        self.neighbors[u].append((v, w))
+        self.neighbors[v].append((u, w))
+        # Save for pop_edge
+        self.pop_u = u
+        self.pop_v = v
+        self.m += 1
+
+    # Remove the last edge inserted - quick version
+    def pop_edge(self):
+        self.m -= 1
+        i = self.edges_reverse[self.pop_u, self.pop_v]
+        del self.edges_reverse[self.pop_u, self.pop_v]
+        del self.edges[i]
+        self.neighbors[self.pop_u].pop()
+        self.neighbors[self.pop_v].pop()
+        self.pop_u = None
+        self.pop_v = None
+
+    def to_nx(self):
+        res = nx.Graph()
+        res.add_nodes_from(self.nodes)
+        res.add_edges_from([(u, v, { 'weight' : w }) for (u, v, w) in self.edges.values()])
+        return res
+
 # ABC algorithm core
 def abc(G):
     # Setting
@@ -35,7 +160,7 @@ def abc(G):
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
 
-    while global_noimp < max(25, global_noimp_limit_coeff * n):
+    while global_noimp < 25:
         # If the best_sol is improved in this cycle, set to true
         improved = False
 
@@ -115,39 +240,31 @@ def random_solution(G):
         # Add the current edges to the list
         edges.append(current_e)
     # Create graph
-    res = nx.Graph()
-    res.add_nodes_from(vertices)
-    res.add_edges_from(edges)
+    res = Solution(n, vertices, edges)
     # Calculate its cost and return in the required format (a tuple)
     return (res, calculate_cost(res, n), 0) # 0 is cycles without improvement
 
 # Calculate the cost of T.
 def calculate_cost(T, n_G):
-    n_total = T.number_of_nodes()
+    n = T.number_of_nodes()
     subtree_node_list = np.ones(n_G)
     sum = 0
     # Nodes to be explored
     visited = np.zeros(n_G, dtype=bool)
-    degrees = np.zeros(n_G)
-    node_queue = []
-    for x in T.nodes:
-        degrees[x] = T.degree(x)
-        if degrees[x] == 1:
-            node_queue.append(x)
-    node_queue = deque(node_queue)
+    degrees = np.array(T.degree_list())
+    node_queue = deque([x for x in T.nodes if degrees[x] == 1])
 
     # Calculate sum of all pairwise distance
     while node_queue:
         current_node = node_queue.pop()
         n_subtree_node = subtree_node_list[current_node]
-        current_edges = [e for e in T.edges(current_node, data=True) if not visited[e[1]]]
+        current_edges = [e for e in T.neighbors[current_node] if not visited[e[0]] and not T.disabled(current_node, e[0])]
         # If there is no more edge, we have finished the graph, return
         if not current_edges:
             break
         # Extract weight and update cost
-        _, v, weight = current_edges[0]
-        weight = weight['weight']
-        sum += weight * (n_total - n_subtree_node) * n_subtree_node
+        v, weight = current_edges[0]
+        sum += weight * (n - n_subtree_node) * n_subtree_node
         # Update tree
         visited[current_node] = True
         degrees[v] -= 1
@@ -156,7 +273,7 @@ def calculate_cost(T, n_G):
         if degrees[v] == 1:
             node_queue.append(v)
     # Divide it by the number of pairs and retrun
-    return sum / (n_total * (n_total - 1) / 2)
+    return sum / (n * (n - 1) / 2)
 
 # See the comment in the paper
 def generate_neighboring_solution(G, E, E_cost, E_list):
@@ -166,27 +283,29 @@ def generate_neighboring_solution(G, E, E_cost, E_list):
     no_sol = True
     for i in range(t_k):
         # Remove random edge
-        e = random.choice(list(res.edges(data=True)))
-        res.remove_edge(e[0], e[1])
+        e = random.choice(list(res.edges.values()))
+        res.disable_edge(e[0], e[1])
         # Detected partition
-        part = nx.node_connected_component(res, e[0])
+        part = res.connected_component(e[0])
         # Random other solution
         F = random.choice(E_list)[0]
         # Check all edges across the cut in F
-        cut = [e_F for e_F in F.edges(data=True) if ((e_F[0] in part) ^ (e_F[1] in part)) and e_F != e]
+        cut = [e_F for e_F in F.edges.values() if ((e_F[0] in part) ^ (e_F[1] in part)) and e_F != e]
         if len(cut) == 0:
             # No solution
-            res.add_edges_from([e])
+            res.reenable_edge()
         else:
             no_sol = False
+            # Commit change
+            res.remove_edge(e[0], e[1])
             cost = []
             for e_c in cut:
-                res.add_edges_from([e_c])
+                res.add_edge(e_c)
                 cost.append(calculate_cost(res, n))
-                res.remove_edge(e_c[0], e_c[1])
+                res.pop_edge()
             cut_ind = np.argmin(np.array(cost))
             e_sol = cut[cut_ind]
-            res.add_edges_from([e_sol])
+            res.add_edge(e_sol)
             res_cost = cost[cut_ind]
             # Got a solution, return
             break
@@ -221,8 +340,8 @@ def select_and_return_index(G, E_list):
 '''
 def local_search(G, T, T_cost):
     n = G.number_of_nodes()
-    tree_edges = list(T.edges(data=True))
-    all_edges = list(G.edges(data=True))
+    tree_edges = list(T.edges.values())
+    all_edges = [(u, v, w['weight']) for (u, v, w) in G.edges(data=True)]
     # Introduce randomness to avoid being stuck at local optimal
     random.shuffle(tree_edges)
 
@@ -233,30 +352,33 @@ def local_search(G, T, T_cost):
             # For every edge, remove the edge and add the lightest edges across the
             # resulting cut.
             best_edge = (u, v, w)
+            # Call disable first to make connected_component() works
+            T.disable_edge(u, v)
+            part = T.connected_component(u)
             T.remove_edge(u, v)
-            part = set(nx.dfs_tree(T, source=u).nodes())
 
             # Find all edges in cut
             # Use XOR to ensure that only one endpoint is in 'part'
-            cut = [(a, b, w) for (a, b, w) in all_edges if (a in part) ^ (b in part)]
+            cut = [(a, b, wc) for (a, b, wc) in all_edges if (a in part) ^ (b in part)]
 
             # Look for the minimum cost edges
             for x, y, wc in cut:
-                T.add_edges_from([(x, y, wc)])
+                T.add_edge((x, y, wc))
                 cost = calculate_cost(T, n)
                 if cost < T_cost:
                     T_cost = cost
                     best_edge = (x, y, wc)
                     global_noimp = False
-                T.remove_edge(x, y)
-            T.add_edges_from([best_edge])
+                T.pop_edge()
+            T.add_edge(best_edge)
 
     return T, T_cost
 
 # search for leaf edges that can reduce cost if removed, Similar to local search.
 def leaf_search(G, T, T_cost):
     n = G.number_of_nodes()
-    leaf_nodes = [x for x in T.nodes if T.degree(x) == 1]
+    degrees = np.array(T.degree_list())
+    leaf_nodes = [x for x in T.nodes if degrees[x] == 1]
     # Introduce randomness to avoid being stuck at local optimal
     random.shuffle(leaf_nodes)
     leaf_nodes = deque(leaf_nodes)
@@ -272,8 +394,10 @@ def leaf_search(G, T, T_cost):
         noimp_nodes = 0
         while leaf_nodes:
             leaf_node = leaf_nodes.pop()
-            u, v, w = list(T.edges(leaf_node, data=True))[0]
-            T.remove_node(leaf_node)
+            v, w = list(T.neighbors[leaf_node])[0]
+            T.disable_edge(leaf_node, v)
+            T.disable_node()
+            # T.remove_node(leaf_node)
             tree_nodes.remove(leaf_node)
             neighbors = list(G.neighbors(leaf_node))
 
@@ -292,29 +416,41 @@ def leaf_search(G, T, T_cost):
                 if vertex_disconnected:
                     break
             if vertex_disconnected:
-                T.add_node(leaf_node)
+                # T.add_node(leaf_node)
+                T.reenable_node()
                 tree_nodes.add(leaf_node)
-                T.add_edges_from([(u, v, w)])
+                T.reenable_edge()
                 continue
 
             # Check cost
             new_cost = calculate_cost(T, n)
             if new_cost > T_cost:
-                T.add_node(leaf_node)
+                # Failed, revert
+                # T.add_node(leaf_node)
+                T.reenable_node()
                 tree_nodes.add(leaf_node)
-                T.add_edges_from([(u, v, w)])
-                # Add the node back to the second queue and
+                T.reenable_edge()
+                # Add the node back to the second queue for next cycle
                 leaf_nodes_second.append(leaf_node)
                 noimp_nodes += 1
             else:
+                # Success, commit change
+                T.remove_edge(leaf_node, v)
+                T.remove_node(leaf_node)
                 T_cost = new_cost
-                if T.degree(v) == 1:
+                if len(T.neighbors[v]) == 1:
                     leaf_nodes.append(v)
 
         # Exchange the two queue
         leaf_nodes, leaf_nodes_second = leaf_nodes_second, leaf_nodes
 
     return T, T_cost
+
+def remove_self_loops(G):
+    for (u, v) in list(G.edges):
+        if u == v:
+            G.remove_edge(u, v)
+    return G
 
 def valid_tree_solution(G, T):
     '''
@@ -323,6 +459,8 @@ def valid_tree_solution(G, T):
 
     Returns a boolean.
     '''
+    if not nx.is_tree(T.to_nx()) or T.disabled_edge or T.disabled_node:
+        return False
     verticesG = set(G.nodes)
     verticesT = list(T.nodes)
     tempSet = set()
@@ -397,6 +535,7 @@ def run_on_all_files(num):
         print('Thread ' + str(num) + ' now at ' + item + '!')
         try:
             G = read_input_file(item)
+            G = remove_self_loops(G)
             min_tree, min_cost = None, float("inf")
             for i in range(5):
                 # Run ABC
@@ -414,8 +553,11 @@ def run_on_all_files(num):
                     min_cost = cost
                 print('Thread ' + str(num) + ' finished cycle ' + str(i) + '!')
             # Print G into the output
+            print("Minimum cost: " + str(cost))
+            min_tree = min_tree.to_nx()
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
+            raise
             # print debug message
             log_lock.acquire()
             log_file.write(str(e) + '\n')
@@ -441,8 +583,9 @@ if  __name__ == "__main__":
             if not os.path.isfile(os.path.join(args.path, file).replace(".in", ".out")):
                 file_queue.put(os.path.join(args.path, file))
     # Run threads
-    for i in range(8):
-        threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
+    # for i in range(8):
+    #     threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
+    run_on_all_files(0)
     file_queue.join()
     # Success: print current time
     log_file.close()
