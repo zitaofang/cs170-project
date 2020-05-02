@@ -557,7 +557,6 @@ def run_on_all_files(num):
             min_tree = min_tree.to_nx()
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
-            raise
             # print debug message
             log_lock.acquire()
             log_file.write(str(e) + '\n')
@@ -583,9 +582,8 @@ if  __name__ == "__main__":
             if not os.path.isfile(os.path.join(args.path, file).replace(".in", ".out")):
                 file_queue.put(os.path.join(args.path, file))
     # Run threads
-    # for i in range(8):
-    #     threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
-    run_on_all_files(0)
+    for i in range(8):
+        threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
     file_queue.join()
     # Success: print current time
     log_file.close()
