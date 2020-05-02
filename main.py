@@ -32,7 +32,6 @@ def abc(G):
     noimp_limit = noimp_limit_coeff * n
 
     E = [random_solution(G) for i in range(nEmployed)]
-    E = [(Ei, calculate_cost(Ei, n), 0) for Ei in E]
     best_sol, best_cost, _ = E[np.argmax(np.array([Ei[1] for Ei in E]))]
     global_noimp = 0
 
@@ -42,19 +41,16 @@ def abc(G):
 
         for i in range(nEmployed):
             (current_E, cost, noimp) = E[i]
-            new_E = generate_neighboring_solution(G, current_E, E)
+            new_E, new_cost = generate_neighboring_solution(G, current_E, cost, E)
             if new_E is None:
-                new_E = random_solution(G)
-                E[i] = (new_E, calculate_cost(new_E, n), 0)
+                E[i] = random_solution(G)
             else:
-                new_cost = calculate_cost(new_E, n)
                 if new_cost < cost:
                     E[i] = (new_E, new_cost, 0)
                 else:
                     noimp += 1
                     if noimp >= noimp_limit:
-                        new_E = random_solution(G)
-                        E[i] = (new_E, calculate_cost(new_E, n), 0)
+                        E[i] = random_solution(G)
                     else:
                         E[i] = (current_E, cost, noimp)
 
@@ -62,8 +58,7 @@ def abc(G):
         for i in range(nOnlooker):
             p = select_and_return_index(G, E)
             (current_E, cost, noimp) = E[p]
-            new_S = generate_neighboring_solution(G, current_E, E)
-            new_cost = float('inf') if new_S is None else calculate_cost(new_S, n)
+            new_S, new_cost = generate_neighboring_solution(G, current_E, cost, E)
             if new_cost < best_cost:
                 best_sol = new_S
                 best_cost = new_cost
@@ -83,6 +78,7 @@ def abc(G):
 
 # Random instance
 def random_solution(G):
+    n = G.number_of_nodes()
     # Solution picking mode
     use_square = random.random() < p_sq
     def calculate_prob(w):
@@ -122,7 +118,8 @@ def random_solution(G):
     res = nx.Graph()
     res.add_nodes_from(vertices)
     res.add_edges_from(edges)
-    return res
+    # Calculate its cost and return in the required format (a tuple)
+    return (res, calculate_cost(res, n), 0) # 0 is cycles without improvement
 
 # Calculate the cost of T.
 def calculate_cost(T, n_G):
@@ -155,9 +152,10 @@ def calculate_cost(T, n_G):
     return sum / (n_total * (n_total - 1) / 2)
 
 # See the comment in the paper
-def generate_neighboring_solution(G, E, E_list):
+def generate_neighboring_solution(G, E, E_cost, E_list):
     n = G.number_of_nodes()
     res = E.copy()
+    res_cost = E_cost
     no_sol = True
     for i in range(t_k):
         # Remove random edge
@@ -179,13 +177,15 @@ def generate_neighboring_solution(G, E, E_list):
                 res.add_edges_from([e_c])
                 cost.append(calculate_cost(res, n))
                 res.remove_edge(e_c[0], e_c[1])
-            e_sol = cut[np.argmin(np.array(cost))]
+            cut_ind = np.argmin(np.array(cost))
+            e_sol = cut[cut_ind]
             res.add_edges_from([e_sol])
+            res_cost = cost[cut_ind]
             # Got a solution, return
             break
     if no_sol:
-        res = None
-    return res
+        res, res_cost = None, float('inf')
+    return res, res_cost
 
 # See the comment in the paper
 def select_and_return_index(G, E_list):
@@ -410,10 +410,11 @@ def run_on_all_files(num):
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
             # print debug message
-            log_lock.acquire()
-            log_file.write(str(e) + '\n')
-            log_lock.release()
-            print('Thread ' + str(num) + ' triggered an exception at ' + item + '!')
+            # log_lock.acquire()
+            # log_file.write(str(e) + '\n')
+            # log_lock.release()
+            # print('Thread ' + str(num) + ' triggered an exception at ' + item + '!')
+            raise
         file_queue.task_done()
 
 # main
@@ -433,9 +434,12 @@ if  __name__ == "__main__":
             # If *.out already exists, skip
             if not os.path.isfile(file.replace(".in", ".out")):
                 file_queue.put(os.path.join(args.path, file))
+
     # Run threads
-    for i in range(8):
-        threading.Thread(target=run_on_all_files, daemon=True).start()
+    # for i in range(8):
+    #     threading.Thread(target=run_on_all_files, args=(i,), daemon=True).start()
+    run_on_all_files(0)
+
     file_queue.join()
     # Success: print current time
     log_file.close()
