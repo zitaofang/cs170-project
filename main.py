@@ -123,18 +123,24 @@ def random_solution(G):
 
 # Calculate the cost of T.
 def calculate_cost(T, n_G):
-    T = T.copy()
     n_total = T.number_of_nodes()
     subtree_node_list = np.ones(n_G)
     sum = 0
     # Nodes to be explored
-    node_queue = deque([x for x in T.nodes if T.degree(x) == 1])
+    visited = np.zeros(n_G, dtype=bool)
+    degrees = np.zeros(n_G)
+    node_queue = []
+    for x in T.nodes:
+        degrees[x] = T.degree(x)
+        if degrees[x] == 1:
+            node_queue.append(x)
+    node_queue = deque(node_queue)
 
     # Calculate sum of all pairwise distance
     while node_queue:
         current_node = node_queue.pop()
         n_subtree_node = subtree_node_list[current_node]
-        current_edges = list(T.edges(current_node, data=True))
+        current_edges = [e for e in T.edges(current_node, data=True) if not visited[e[1]]]
         # If there is no more edge, we have finished the graph, return
         if not current_edges:
             break
@@ -143,10 +149,11 @@ def calculate_cost(T, n_G):
         weight = weight['weight']
         sum += weight * (n_total - n_subtree_node) * n_subtree_node
         # Update tree
-        T.remove_node(current_node)
+        visited[current_node] = True
+        degrees[v] -= 1
         subtree_node_list[v] += subtree_node_list[current_node]
         # Put v to the vertices to explore if it becomes a leaf
-        if T.degree(v) == 1:
+        if degrees[v] == 1:
             node_queue.append(v)
     # Divide it by the number of pairs and retrun
     return sum / (n_total * (n_total - 1) / 2)
@@ -162,7 +169,7 @@ def generate_neighboring_solution(G, E, E_cost, E_list):
         e = random.choice(list(res.edges(data=True)))
         res.remove_edge(e[0], e[1])
         # Detected partition
-        part = set(nx.dfs_tree(res, source=e[0]).nodes())
+        part = nx.node_connected_component(res, e[0])
         # Random other solution
         F = random.choice(E_list)[0]
         # Check all edges across the cut in F
