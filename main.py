@@ -344,12 +344,14 @@ def local_search(G, T, T_cost):
     n = G.number_of_nodes()
     all_edges = [(u, v, w['weight']) for (u, v, w) in G.edges(data=True)]
 
+    # Get all current edges
+    tree_edges = list(T.edges.values())
+    tree_edges_2 = []
+
     global_noimp = False
     while not global_noimp:
         global_noimp = True
 
-        # Get all current edges
-        tree_edges = list(T.edges.values())
         # Introduce randomness to avoid being stuck at local optimal
         random.shuffle(tree_edges)
 
@@ -376,6 +378,10 @@ def local_search(G, T, T_cost):
                     global_noimp = False
                 T.pop_edge()
             T.add_edge(best_edge)
+            tree_edges_2.append(best_edge)
+
+        # Exchange tree_edges
+        tree_edges, tree_edges_2 = tree_edges_2, []
 
     return T, T_cost
 
@@ -552,7 +558,7 @@ def run_on_all_files(num):
                 min_cost = 0
                 print("Thread " + str(num) + ' found trivial solution!')
             else:
-                for i in range(5):
+                for i in range(3):
                     # Run ABC
                     tree, cost = abc(G)
                     assert valid_tree_solution(G, tree)
