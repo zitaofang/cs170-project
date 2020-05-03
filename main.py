@@ -139,8 +139,8 @@ class Solution:
         i = self.edges_reverse[self.pop_u, self.pop_v]
         del self.edges_reverse[self.pop_u, self.pop_v]
         del self.edges[i]
-        self.neighbors[self.pop_u].pop()
-        self.neighbors[self.pop_v].pop()
+        assert self.pop_v == self.neighbors[self.pop_u].pop()[0]
+        assert self.pop_u == self.neighbors[self.pop_v].pop()[0]
         self.pop_u = None
         self.pop_v = None
 
@@ -342,14 +342,17 @@ def select_and_return_index(G, E_list):
 '''
 def local_search(G, T, T_cost):
     n = G.number_of_nodes()
-    tree_edges = list(T.edges.values())
     all_edges = [(u, v, w['weight']) for (u, v, w) in G.edges(data=True)]
-    # Introduce randomness to avoid being stuck at local optimal
-    random.shuffle(tree_edges)
 
     global_noimp = False
     while not global_noimp:
         global_noimp = True
+
+        # Get all current edges
+        tree_edges = list(T.edges.values())
+        # Introduce randomness to avoid being stuck at local optimal
+        random.shuffle(tree_edges)
+
         for u, v, w in tree_edges:
             # For every edge, remove the edge and add the lightest edges across the
             # resulting cut.
@@ -569,6 +572,7 @@ def run_on_all_files(num):
             print("Minimum cost: " + str(min_cost))
             write_output_file(min_tree, item.replace(".in", ".out"))
         except Exception as e:
+            # raise
             # print debug message
             log_lock.acquire()
             log_file.write(str(e) + '\n')
